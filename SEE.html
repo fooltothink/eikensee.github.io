@@ -37,13 +37,14 @@
             to { transform: translateY(0); opacity: 1; }
         }
 
-        .recovery-overlay {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(4px);
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
+        .animate-opening { animation: fadeInDown 0.7s ease-out forwards; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen p-4" onclick="handleGlobalClick()">
+<body class="bg-slate-50 text-slate-900 min-h-screen p-4">
 
 <div id="app" class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 mt-4">
     <!-- UI injected by JS -->
@@ -54,6 +55,7 @@ const SCENARIOS = [
     {
         id: 'warmup',
         title: 'Warm-up: The SEE Logic',
+        openingSentence: "One day, some events happened in a logical order.",
         panels: [
             { id: 'w1', title: 'The Late Arrival', s: "The man arrived at the station.", e: "He felt anxious and looked at his clock.", ex: "This was because he missed the important meeting." },
             { id: 'w2', title: 'The New Project', s: "The boss praised the employee for her hard work.", e: "She looked very satisfied and proud.", ex: "Because the long project had finally been completed." },
@@ -63,6 +65,7 @@ const SCENARIOS = [
     {
         id: 'day1',
         title: 'Day 1: The Farming Experience',
+        openingSentence: "One day, a woman was watching a television program.",
         panels: [
             { id: 'd1p1', title: 'The Television Program', s: "There was a program about a campaign inviting viewers to join a farming experience.", e: "The woman seemed really interested in the program.", ex: "This was because she pictured herself working hard on a farm." },
             { id: 'd1p2', title: 'A Month Later', s: "The woman went to a farm and stood in a field with other participants.", e: "She and the others listened attentively to a professional farmer.", ex: "He was explaining the correct way to harvest potatoes." },
@@ -73,6 +76,7 @@ const SCENARIOS = [
     {
         id: 'day2',
         title: 'Day 2: The Casino Job',
+        openingSentence: "One day, a woman was looking for a job in her hometown.",
         panels: [
             { id: 'd2p1', title: 'The Closing Cafe', s: "She approached a café owner to ask for a job, but he was holding a sign that said the café was closing down.", e: "She noticed several other shops with 'FOR RENT' signs in their windows.", ex: "She felt disappointed because the local economy was struggling." },
             { id: 'd2p2', title: 'Two Weeks Later', s: "While she was reading a newspaper, she saw an advertisement for a new casino that was hiring staff.", e: "She looked hopeful as she wrote down the contact information.", ex: "This was because she decided to apply for the position." },
@@ -83,6 +87,7 @@ const SCENARIOS = [
     {
         id: 'day3',
         title: 'Day 3: Job-Hunting Student',
+        openingSentence: "One day, a university student went job-hunting.",
         panels: [
             { id: 'd3p1', title: 'The Job Fair', s: "He attended a large JOB FAIR where a massive crowd of students had gathered.", e: "He looked surprised and overwhelmed by how many people were there.", ex: "Since there were no seats left, he was forced to stand at the back." },
             { id: 'd3p2', title: 'A Few Days Later', s: "While sitting in a café, he was writing down company examination dates in his diary.", e: "He looked stressed as he compared the exam dates with his university schedule.", ex: "He realized that several exams overlapped with his classes." },
@@ -93,6 +98,7 @@ const SCENARIOS = [
     {
         id: 'day4',
         title: 'Day 4: The Teleworking System',
+        openingSentence: "One day, a man wearing glasses was going to his company on a crowded rush-hour train.",
         panels: [
             { id: 'd4p1', title: 'The Crowded Train', s: "The man was looking at his watch while standing among many other passengers.", e: "He looked worried about the time while others appeared uncomfortable.", ex: "This was because the train was packed, making his commute difficult." },
             { id: 'd4p2', title: 'Later at Work', s: "A notice was posted in his office announcing a new teleworking system.", e: "The man looked pleased as he read the announcement.", ex: "He decided to use the system so he would no longer travel on the train." },
@@ -113,15 +119,11 @@ let state = {
     recognition: null,
     isCorrect: false,
     isRecognitionActive: false,
-    lastStartTime: 0,
-    keepAliveStream: null,
     audioContext: null,
-    whiteNoiseNode: null,
     score: 0,
     isAnimatingScore: false
 };
 
-// Procedural Sound Generator
 function playSound(type) {
     if (!state.audioContext) {
         state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -131,22 +133,20 @@ function playSound(type) {
     
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-
     osc.connect(gain);
     gain.connect(ctx.destination);
-
     const now = ctx.currentTime;
 
     if (type === 'success') {
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, now); // C5
-        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
         gain.gain.setValueAtTime(0.1, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
         osc.start(now);
         osc.stop(now + 0.3);
     } else if (type === 'fanfare') {
-        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        const notes = [523.25, 659.25, 783.99, 1046.50];
         notes.forEach((note, i) => {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
@@ -169,7 +169,6 @@ function playSound(type) {
     }
 }
 
-// Initialize Voice Recognition
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     state.recognition = new SpeechRecognition();
@@ -184,7 +183,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
     state.recognition.onresult = (event) => {
         if (state.isCorrect) return;
-
         let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0].transcript;
@@ -203,11 +201,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         if (event.error === 'no-speech' || event.error === 'audio-capture') {
             state.isRecognitionActive = false;
         }
-        if (event.error === 'not-allowed') {
-            state.isListening = false;
-            state.isRecognitionActive = false;
-            stopHardwareBridge();
-        }
         render();
     };
 
@@ -220,63 +213,8 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     };
 }
 
-function handleGlobalClick() {
-    if (state.gameState === 'playing' && state.isListening && !state.isRecognitionActive) {
-        startMicService();
-    }
-}
-
-async function startHardwareBridge() {
-    if (!state.keepAliveStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-            state.keepAliveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            if (!state.audioContext) {
-                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (state.audioContext.state === 'suspended') {
-                await state.audioContext.resume();
-            }
-
-            // Inaudible White Noise to keep hardware locked
-            const bufferSize = 2 * state.audioContext.sampleRate;
-            const noiseBuffer = state.audioContext.createBuffer(1, bufferSize, state.audioContext.sampleRate);
-            const output = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                output[i] = Math.random() * 2 - 1;
-            }
-
-            state.whiteNoiseNode = state.audioContext.createBufferSource();
-            state.whiteNoiseNode.buffer = noiseBuffer;
-            state.whiteNoiseNode.loop = true;
-
-            const silentGain = state.audioContext.createGain();
-            silentGain.gain.value = 0.001; 
-
-            state.whiteNoiseNode.connect(silentGain);
-            silentGain.connect(state.audioContext.destination);
-            state.whiteNoiseNode.start();
-        } catch (e) {
-            console.warn("Hardware Bridge failed.", e);
-        }
-    }
-}
-
-function stopHardwareBridge() {
-    if (state.whiteNoiseNode) {
-        state.whiteNoiseNode.stop();
-        state.whiteNoiseNode = null;
-    }
-    if (state.keepAliveStream) {
-        state.keepAliveStream.getTracks().forEach(track => track.stop());
-        state.keepAliveStream = null;
-    }
-}
-
 async function startMicService() {
     if (state.recognition && !state.isRecognitionActive) {
-        state.lastStartTime = Date.now();
-        await startHardwareBridge();
         try { 
             state.recognition.start(); 
         } catch(e) {}
@@ -284,11 +222,13 @@ async function startMicService() {
 }
 
 function scramble(sentence) {
-    return sentence.split(' ').sort(() => Math.random() - 0.5);
+    return (sentence || "").split(' ').sort(() => Math.random() - 0.5);
 }
 
 function checkSpeech() {
     const rawTarget = state.selectedScenario.panels[state.currentPanelIndex][state.currentType];
+    if (!rawTarget) return;
+
     const target = rawTarget.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
     const input = state.transcript.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
     
@@ -345,7 +285,11 @@ function render() {
         `;
     } else if (state.gameState === 'playing') {
         const panel = state.selectedScenario.panels[state.currentPanelIndex];
-        
+        const opening = (state.currentPanelIndex === 0 && state.selectedScenario.openingSentence) ? 
+            `<div class="mb-6 p-4 bg-indigo-50 border-l-4 border-indigo-500 text-indigo-900 font-bold italic rounded-r-lg text-sm animate-opening">
+                "${state.selectedScenario.openingSentence}"
+            </div>` : '';
+
         app.innerHTML = `
             <div class="bg-slate-900 p-6 text-white flex justify-between items-center transition-all ${state.isCorrect ? 'correct-flash' : ''}">
                 <div>
@@ -358,16 +302,8 @@ function render() {
                 </div>
             </div>
             
-            <div class="p-8 relative">
-                ${(!state.isRecognitionActive && !state.isCorrect) ? `
-                    <div class="absolute inset-0 recovery-overlay z-50 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-                        <div class="bg-indigo-600 text-white p-8 rounded-3xl shadow-2xl cursor-pointer hover:bg-indigo-700 active:scale-90 transition-all" onclick="startMicService()">
-                            <div class="text-4xl mb-3">🎤</div>
-                            <div class="font-black text-xl leading-tight uppercase tracking-tighter">Wake Microphone</div>
-                            <div class="text-[10px] opacity-80 mt-1 font-bold">Haruka, tap here to continue!</div>
-                        </div>
-                    </div>
-                ` : ''}
+            <div class="p-8">
+                ${opening}
 
                 <div class="flex justify-between items-center mb-8">
                     <div class="flex gap-1.5">
@@ -377,7 +313,7 @@ function render() {
                     </div>
                     <div class="flex items-center gap-2">
                         <div class="w-2.5 h-2.5 rounded-full ${state.isRecognitionActive ? 'bg-red-500 mic-active' : 'bg-slate-300'}"></div>
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">${state.isRecognitionActive ? 'Listening' : 'Connecting'}</span>
+                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">${state.isRecognitionActive ? 'Listening' : 'Ready'}</span>
                     </div>
                 </div>
 
@@ -391,7 +327,7 @@ function render() {
                     </div>
 
                     <div id="live-transcript" class="text-center text-indigo-500 italic text-xl h-10 px-4 font-bold max-w-sm">
-                        ${state.transcript || 'Ready to listen...'}
+                        ${state.transcript || 'Speak the sentence...'}
                     </div>
 
                     ${state.isCorrect ? `
@@ -414,7 +350,7 @@ function render() {
             <div class="p-16 text-center animate-in zoom-in duration-500">
                 <div class="text-8xl mb-8">🎊</div>
                 <h2 class="text-4xl font-black text-slate-900 mb-2 tracking-tighter italic uppercase">Mastery!</h2>
-                <p class="text-slate-500 mb-10 font-medium">You completed the story with a score of ${state.score}.</p>
+                <p class="text-slate-500 mb-10 font-medium">Scenario complete with a score of ${state.score}.</p>
                 <div class="bg-indigo-600 text-white p-8 rounded-3xl mb-10 inline-block shadow-xl">
                     <div class="text-xs font-black uppercase tracking-widest opacity-80 mb-1">Final Score</div>
                     <div class="text-6xl font-mono font-black">${state.score}</div>
@@ -433,18 +369,6 @@ function selectScenario(id) {
     state.selectedScenario = SCENARIOS.find(s => s.id === id);
     state.currentPanelIndex = 0;
     state.currentType = 's';
-    render();
-}
-
-function toggleMic() {
-    if (state.isRecognitionActive) {
-        state.isListening = false;
-        if (state.recognition) state.recognition.stop();
-        stopHardwareBridge();
-    } else {
-        state.isListening = true;
-        startMicService();
-    }
     render();
 }
 
@@ -479,11 +403,9 @@ function handleSuccess() {
         state.isListening = false;
         playSound('fanfare');
         if (state.recognition) state.recognition.stop();
-        stopHardwareBridge();
         
         const currentHigh = parseInt(localStorage.getItem('see_highscore') || 0);
         if (state.score > currentHigh) localStorage.setItem('see_highscore', state.score);
-
     } else {
         const nextPanel = state.selectedScenario.panels[state.currentPanelIndex];
         state.shuffledWords = scramble(nextPanel[state.currentType]);
@@ -498,7 +420,6 @@ function resetGame() {
     state.currentType = 's';
     state.isListening = false;
     if (state.recognition) state.recognition.stop();
-    stopHardwareBridge();
     render();
 }
 
