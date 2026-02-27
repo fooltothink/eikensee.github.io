@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EIKEN Pre-1: Voice Narrator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains+Mono', monospace; }
+        .mic-active { animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .correct-flash { animation: flash 0.5s ease-out; }
+        @keyframes flash {
+            0% { background-color: transparent; }
+            50% { background-color: #dcfce7; }
+            100% { background-color: transparent; }
+        }
+        .recovery-overlay {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen p-4" onclick="handleGlobalClick()">
+
+<div id="app" class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 mt-4">
+    <!-- UI injected by JS -->
+</div>
+
+<script>
+const SCENARIOS = [
+    {
+        id: 'warmup',
+        title: 'Warm-up: The SEE Logic',
+        panels: [
+            { id: 'w1', title: 'The Late Arrival', s: "The man arrived at the station.", e: "He felt anxious and looked at his clock.", ex: "This was because he missed the important meeting." },
+            { id: 'w2', title: 'The New Project', s: "The boss praised the employee for her hard work.", e: "She looked very satisfied and proud.", ex: "Because the long project had finally been completed." },
+            { id: 'w3', title: 'The Rainy Day', s: "It was suddenly raining heavy outside.", e: "She looked frustrated as she stood on the street.", ex: "This was because she had left her umbrella at home." }
+        ]
+    },
+    {
+        id: 'day1',
+        title: 'Day 1: The Farming Experience',
+        panels: [
+            { id: 'd1p1', title: 'The Television Program', s: "There was a program about a campaign inviting viewers to join a farming experience.", e: "The woman seemed really interested in the program.", ex: "This was because she pictured herself working hard on a farm." },
+            { id: 'd1p2', title: 'A Month Later', s: "The woman went to a farm and stood in a field with other participants.", e: "She and the others listened attentively to a professional farmer.", ex: "He was explaining the correct way to harvest potatoes." },
+            { id: 'd1p3', title: 'An Hour Later', s: "Everyone was digging up potatoes in the field.", e: "They were enjoying themselves despite the hard work.", ex: "The woman remarked that the experience was more fun than she had expected." },
+            { id: 'd1p4', title: 'The Next Morning', s: "The woman was back at her office at 11:00 am.", e: "She looked exhausted and was struggling to finish her work.", ex: "This was because her body felt the physical toll of the manual labor from the day before." }
+        ]
+    },
+    {
+        id: 'day2',
+        title: 'Day 2: The Casino Job',
+        panels: [
+            { id: 'd2p1', title: 'The Closing Cafe', s: "She approached a café owner to ask for a job, but he was holding a sign that said the café was closing down.", e: "She noticed several other shops with 'FOR RENT' signs in their windows.", ex: "She felt disappointed because the local economy was struggling." },
+            { id: 'd2p2', title: 'Two Weeks Later', s: "While she was reading a newspaper, she saw an advertisement for a new casino that was hiring staff.", e: "She looked hopeful as she wrote down the contact information.", ex: "This was because she decided to apply for the position." },
+            { id: 'd2p3', title: 'Two Months Later', s: "The woman was working at the reception desk of the now-busy casino.", e: "She looked concerned and worried as she watched a customer staring into his empty wallet.", ex: "She realized that some people were spending too much money at the casino." },
+            { id: 'd2p4', title: 'Later That Night', s: "She was walking along a dark street from the casino and saw a group of men talking loudly.", e: "She looked nervous as she hurried past the rowdy group.", ex: "She realized that the atmosphere of her neighborhood had changed since the casino opened." }
+        ]
+    },
+    {
+        id: 'day3',
+        title: 'Day 3: Job-Hunting Student',
+        panels: [
+            { id: 'd3p1', title: 'The Job Fair', s: "He attended a large JOB FAIR where a massive crowd of students had gathered.", e: "He looked surprised and overwhelmed by how many people were there.", ex: "Since there were no seats left, he was forced to stand at the back." },
+            { id: 'd3p2', title: 'A Few Days Later', s: "While sitting in a café, he was writing down company examination dates in his diary.", e: "He looked stressed as he compared the exam dates with his university schedule.", ex: "He realized that several exams overlapped with his classes." },
+            { id: 'd3p3', title: 'A Month Later', s: "The student's professor asked one of his classmates why the young man was absent.", ex: "The classmate explained that the student was busy job-hunting lately." },
+            { id: 'd3p4', title: 'Four Months Later', s: "The student was called into the professor's office.", e: "He looked shocked and worried when the professor told him it would be difficult to graduate.", ex: "His frequent absences from class had put his graduation at risk." }
+        ]
+    },
+    {
+        id: 'day4',
+        title: 'Day 4: The Teleworking System',
+        panels: [
+            { id: 'd4p1', title: 'The Crowded Train', s: "The man was looking at his watch while standing among many other passengers.", e: "He looked worried about the time while others appeared uncomfortable.", ex: "This was because the train was packed, making his commute difficult." },
+            { id: 'd4p2', title: 'Later at Work', s: "A notice was posted in his office announcing a new teleworking system.", e: "The man looked pleased as he read the announcement.", ex: "He decided to use the system so he would no longer travel on the train." },
+            { id: 'd4p3', title: 'One Week Later', s: "The man was sitting in front of his computer at home, dressed in casual clothes.", e: "He looked relaxed and happy as he worked.", ex: "Because he was able to eat and drink in the comfort of his own home." },
+            { id: 'd4p4', title: 'One Month Later', s: "The man was still working from home, but his hair had grown long.", e: "He looked somewhat unkempt as he sat in the middle of a messy room." }
+        ]
+    }
+];
+
+let state = {
+    selectedScenario: SCENARIOS[0],
+    currentPanelIndex: 0,
+    currentType: 's',
+    gameState: 'setup',
+    shuffledWords: [],
+    transcript: "",
+    isListening: false,
+    recognition: null,
+    isCorrect: false,
+    isRecognitionActive: false,
+    lastStartTime: 0,
+    keepAliveStream: null,
+    audioContext: null,
+    whiteNoiseNode: null
+};
+
+// Initialize Voice Recognition
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    state.recognition = new SpeechRecognition();
+    state.recognition.continuous = true;
+    state.recognition.interimResults = true;
+    state.recognition.lang = 'en-US';
+
+    state.recognition.onstart = () => {
+        state.isRecognitionActive = true;
+        render();
+    };
+
+    state.recognition.onresult = (event) => {
+        if (state.isCorrect) return;
+
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                state.transcript = transcript;
+                checkSpeech();
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        const liveEl = document.getElementById('live-transcript');
+        if (liveEl) liveEl.innerText = interimTranscript || state.transcript;
+    };
+
+    state.recognition.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'audio-capture') {
+            state.isRecognitionActive = false;
+        }
+        if (event.error === 'not-allowed') {
+            state.isListening = false;
+            state.isRecognitionActive = false;
+            stopHardwareBridge();
+        }
+        render();
+    };
+
+    state.recognition.onend = () => {
+        state.isRecognitionActive = false;
+        // In local files, auto-restart triggers prompt. We attempt restart only if intended.
+        if (state.isListening && state.gameState === 'playing' && !state.isCorrect) {
+            startMicService();
+        }
+        render();
+    };
+}
+
+function handleGlobalClick() {
+    // If mic is dead during a lesson, a single click wakes it up
+    if (state.gameState === 'playing' && state.isListening && !state.isRecognitionActive) {
+        startMicService();
+    }
+}
+
+async function startHardwareBridge() {
+    if (!state.keepAliveStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+            state.keepAliveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            if (!state.audioContext) {
+                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (state.audioContext.state === 'suspended') {
+                await state.audioContext.resume();
+            }
+
+            // WHITE NOISE GENERATOR: Tricking the Voice Activity Detector
+            const bufferSize = 2 * state.audioContext.sampleRate;
+            const noiseBuffer = state.audioContext.createBuffer(1, bufferSize, state.audioContext.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+
+            state.whiteNoiseNode = state.audioContext.createBufferSource();
+            state.whiteNoiseNode.buffer = noiseBuffer;
+            state.whiteNoiseNode.loop = true;
+
+            const silentGain = state.audioContext.createGain();
+            silentGain.gain.value = 0.001; // Effectively inaudible white noise
+
+            state.whiteNoiseNode.connect(silentGain);
+            silentGain.connect(state.audioContext.destination);
+            state.whiteNoiseNode.start();
+            
+            console.log("Hardware Bridge: White noise pipeline active.");
+        } catch (e) {
+            console.warn("Hardware Bridge failed.", e);
+        }
+    }
+}
+
+function stopHardwareBridge() {
+    if (state.whiteNoiseNode) {
+        state.whiteNoiseNode.stop();
+        state.whiteNoiseNode = null;
+    }
+    if (state.keepAliveStream) {
+        state.keepAliveStream.getTracks().forEach(track => track.stop());
+        state.keepAliveStream = null;
+    }
+    if (state.audioContext) {
+        state.audioContext.close();
+        state.audioContext = null;
+    }
+}
+
+async function startMicService() {
+    if (state.recognition && !state.isRecognitionActive) {
+        state.lastStartTime = Date.now();
+        await startHardwareBridge();
+        try { 
+            state.recognition.start(); 
+        } catch(e) { /* Busy */ }
+    }
+}
+
+function scramble(sentence) {
+    return sentence.split(' ').sort(() => Math.random() - 0.5);
+}
+
+function checkSpeech() {
+    const rawTarget = state.selectedScenario.panels[state.currentPanelIndex][state.currentType];
+    const target = rawTarget.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+    const input = state.transcript.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+    
+    const targetWords = target.split(/\s+/).filter(w => w.length > 2);
+    const matchedWords = targetWords.filter(word => input.includes(word));
+    const accuracy = targetWords.length > 0 ? (matchedWords.length / targetWords.length) : 1;
+
+    if (accuracy > 0.60 || input.includes(target)) {
+        state.isCorrect = true;
+        render();
+        // Do NOT stop recognition; keep session active for next panel
+        setTimeout(() => {
+            handleSuccess();
+        }, 800);
+    }
+}
+
+function render() {
+    const app = document.getElementById('app');
+    if (!app) return;
+    
+    if (state.gameState === 'setup') {
+        app.innerHTML = `
+            <div class="bg-slate-900 p-6 text-white flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold">🏆 SEE Voice Narrator</h1>
+                    <p class="text-slate-400 text-sm font-medium tracking-tight">EIKEN Pre-1 Speaking Drill</p>
+                </div>
+            </div>
+            <div class="p-8 space-y-6">
+                <section>
+                    <h3 class="text-sm font-semibold text-slate-500 mb-3 uppercase tracking-wider">Select Scenario</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        ${SCENARIOS.map(s => `
+                            <button onclick="selectScenario('${s.id}')" class="p-4 rounded-xl border-2 text-left transition-all ${state.selectedScenario.id === s.id ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-100 hover:border-slate-200'}">
+                                <div class="font-bold">${s.title}</div>
+                                <div class="text-xs opacity-60">${s.panels.length} panels</div>
+                            </button>
+                        `).join('')}
+                    </div>
+                </section>
+                <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-[11px] text-indigo-800 leading-relaxed text-center">
+                    <p><strong>Silence Prevention Active:</strong> We are injecting sub-audible white noise into the audio graph to keep the microphone sensor engaged.</p>
+                </div>
+                <button onclick="startGame()" class="w-full bg-indigo-600 text-white py-5 rounded-xl font-bold text-xl hover:bg-indigo-700 shadow-lg">
+                    START VOICE LESSON
+                </button>
+            </div>
+        `;
+    } else if (state.gameState === 'playing') {
+        const panel = state.selectedScenario.panels[state.currentPanelIndex];
+        
+        app.innerHTML = `
+            <div class="bg-slate-900 p-6 text-white flex justify-between items-center ${state.isCorrect ? 'correct-flash' : ''}">
+                <div>
+                    <h1 class="text-xl font-bold">${state.selectedScenario.title}</h1>
+                    <p class="text-slate-400 text-sm">${panel.title}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full ${state.isRecognitionActive ? 'bg-red-500 mic-active' : 'bg-slate-600'}"></div>
+                    <span class="text-xs font-bold uppercase tracking-widest">${state.isRecognitionActive ? 'ON' : 'OFF'}</span>
+                </div>
+            </div>
+            
+            <div class="p-8 relative">
+                ${(!state.isRecognitionActive && !state.isCorrect) ? `
+                    <div class="absolute inset-0 recovery-overlay z-50 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-300">
+                        <div class="bg-indigo-600 text-white p-6 rounded-2xl shadow-2xl cursor-pointer hover:bg-indigo-700 active:scale-95 transition-all" onclick="startMicService()">
+                            <div class="text-3xl mb-2">🎤</div>
+                            <div class="font-bold text-lg leading-tight">MIC TIMED OUT<br><span class="text-sm font-normal opacity-80">Tap to Resume</span></div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="flex justify-between items-center mb-6">
+                    <span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-black uppercase tracking-widest">
+                        ${state.currentType === 's' ? 'Situation' : state.currentType === 'e' ? 'Emotion' : 'Explanation'}
+                    </span>
+                    <span class="text-xs text-slate-400 font-mono tracking-tighter">Panel ${state.currentPanelIndex + 1}/${state.selectedScenario.panels.length}</span>
+                </div>
+
+                <div class="min-h-[220px] flex flex-col items-center justify-center space-y-10">
+                    <div class="flex flex-wrap justify-center gap-3">
+                        ${state.shuffledWords.map(word => `
+                            <span class="px-5 py-3 bg-white text-slate-800 rounded-xl font-semibold border-2 border-slate-100 shadow-sm text-lg select-none">
+                                ${word}
+                            </span>
+                        `).join('')}
+                    </div>
+
+                    <div id="live-transcript" class="text-center text-indigo-400 italic text-lg h-8 px-4 font-medium">
+                        ${state.transcript || (state.isRecognitionActive ? 'Wait for Haruka to speak...' : 'Connecting...')}
+                    </div>
+
+                    ${state.isCorrect ? `
+                        <div class="text-green-600 font-black text-2xl animate-bounce tracking-widest">✓ CORRECT!</div>
+                    ` : ''}
+                </div>
+
+                <div class="mt-8 flex justify-between items-center">
+                    <button onclick="toggleMic()" class="px-5 py-3 ${state.isRecognitionActive ? 'bg-red-50 text-red-600 border-red-200' : 'bg-indigo-600 text-white border-indigo-700'} border rounded-xl text-sm font-bold uppercase transition-all shadow-sm">
+                        ${state.isRecognitionActive ? 'Stop Mic' : 'Start Mic'}
+                    </button>
+                    <button onclick="handleSuccess()" class="text-xs text-slate-400 hover:text-slate-600 underline uppercase tracking-widest font-bold">
+                        Skip
+                    </button>
+                </div>
+            </div>
+        `;
+    } else if (state.gameState === 'result') {
+        app.innerHTML = `
+            <div class="p-16 text-center">
+                <div class="text-7xl mb-6 animate-bounce">🎉</div>
+                <h2 class="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">Lesson Complete</h2>
+                <button onclick="resetGame()" class="px-10 py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800">
+                    RETURN TO MENU
+                </button>
+            </div>
+        `;
+    }
+}
+
+function selectScenario(id) {
+    state.selectedScenario = SCENARIOS.find(s => s.id === id);
+    state.currentPanelIndex = 0;
+    state.currentType = 's';
+    render();
+}
+
+function toggleMic() {
+    if (state.isRecognitionActive) {
+        state.isListening = false;
+        if (state.recognition) state.recognition.stop();
+        stopHardwareBridge();
+    } else {
+        state.isListening = true;
+        startMicService();
+    }
+    render();
+}
+
+function startGame() {
+    state.gameState = 'playing';
+    state.isCorrect = false;
+    state.transcript = "";
+    state.shuffledWords = scramble(state.selectedScenario.panels[0].s);
+    state.isListening = true;
+    startMicService();
+    render();
+}
+
+function handleSuccess() {
+    state.isCorrect = false;
+    state.transcript = ""; 
+    
+    // UI Cleanup
+    const liveEl = document.getElementById('live-transcript');
+    if (liveEl) liveEl.innerText = 'Listening...';
+
+    const panel = state.selectedScenario.panels[state.currentPanelIndex];
+    if (state.currentType === 's') {
+        state.currentType = panel.e ? 'e' : 'ex';
+    } else if (state.currentType === 'e') {
+        state.currentType = panel.ex ? 'ex' : 's';
+        if (state.currentType === 's') state.currentPanelIndex++;
+    } else {
+        state.currentPanelIndex++;
+        state.currentType = 's';
+    }
+    
+    if (state.currentPanelIndex >= state.selectedScenario.panels.length) {
+        state.gameState = 'result';
+        state.isListening = false;
+        if (state.recognition) state.recognition.stop();
+        stopHardwareBridge();
+    } else {
+        const nextPanel = state.selectedScenario.panels[state.currentPanelIndex];
+        state.shuffledWords = scramble(nextPanel[state.currentType]);
+        // Continuous mode: Service stays running.
+    }
+    render();
+}
+
+function resetGame() {
+    state.gameState = 'setup';
+    state.currentPanelIndex = 0;
+    state.currentType = 's';
+    state.isListening = false;
+    if (state.recognition) state.recognition.stop();
+    stopHardwareBridge();
+    render();
+}
+
+render();
+</script>
+</body>
+</html>
