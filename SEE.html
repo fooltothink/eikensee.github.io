@@ -139,8 +139,59 @@ let state = {
     isRecognitionActive: false,
     audioContext: null,
     score: 0,
-    isAnimatingScore: false
+    isAnimatingScore: false,
+    volume: 0,
+    audioStream: null,
+    analyser: null,
+    dataArray: null
 };
+
+async function startVolumeMonitoring() {
+    try {
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.audioStream = stream;
+        
+        const source = state.audioContext.createMediaStreamSource(stream);
+        state.analyser = state.audioContext.createAnalyser();
+        state.analyser.fftSize = 256;
+        
+        const bufferLength = state.analyser.frequencyBinCount;
+        state.dataArray = new Uint8Array(bufferLength);
+        
+        source.connect(state.analyser);
+        updateVolume();
+    } catch (err) {
+        console.error("Microphone access denied for volume meter:", err);
+    }
+}
+
+function updateVolume() {
+    if (!state.isListening) return;
+    
+    state.analyser.getByteFrequencyData(state.dataArray);
+    let values = 0;
+    for (let i = 0; i < state.dataArray.length; i++) {
+        values += state.dataArray[i];
+    }
+    state.volume = values / state.dataArray.length;
+
+    // Update the visual indicator directly for performance
+    const micDot = document.getElementById('mic-indicator-dot');
+    const micRing = document.getElementById('mic-indicator-ring');
+    if (micDot && micRing) {
+        const scale = 1 + (state.volume / 100);
+        const opacity = 0.2 + (state.volume / 100);
+        micDot.style.transform = `scale(${scale})`;
+        micRing.style.transform = `scale(${scale * 1.5})`;
+        micRing.style.opacity = opacity;
+    }
+    
+    requestAnimationFrame(updateVolume);
+}
 
 function playSound(type) {
     if (!state.audioContext) {
@@ -246,6 +297,15 @@ function render() {
             `<div class="mb-6 p-4 bg-indigo-50 border-l-4 border-indigo-500 text-indigo-900 font-bold italic rounded-r-lg text-sm animate-opening">"${state.selectedScenario.openingSentence}"</div>` : '';
 
         app.innerHTML = `
+            <div class="flex items-center gap-3 bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700">
+			    <div class="relative flex items-center justify-center w-4 h-4">
+			        <div id="mic-indicator-ring" class="absolute inset-0 rounded-full bg-red-500/20 transition-transform duration-75"></div>
+			        <div id="mic-indicator-dot" class="relative w-2 h-2 rounded-full ${state.isRecognitionActive ? 'bg-red-500' : 'bg-slate-500'} transition-transform duration-75"></div>
+			    </div>
+			    <span class="text-[10px] font-black uppercase text-slate-400 tracking-tighter">
+			        ${state.isRecognitionActive ? 'Live Audio' : 'Mic Off'}
+			    </span>
+			</div>
             <div class="bg-slate-900 p-6 text-white flex justify-between items-center transition-all ${state.isCorrect ? 'correct-flash' : ''}">
                 <div><h1 class="text-lg font-bold truncate max-w-[200px]">${state.selectedScenario.title}</h1><p class="text-slate-400 text-xs font-medium">${panel.title}</p></div>
                 <div class="flex flex-col items-end"><div class="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">Score</div><div class="text-2xl font-mono font-bold text-yellow-400 ${state.isAnimatingScore ? 'score-pop' : ''}">${state.score}</div></div>
@@ -290,7 +350,22 @@ function render() {
 }
 
 function selectScenario(id) { state.selectedScenario = SCENARIOS.find(s => s.id === id); state.currentPanelIndex = 0; state.currentType = 's'; render(); }
-function startGame() { state.gameState = 'playing'; state.isCorrect = false; state.transcript = ""; state.score = 0; state.shuffledWords = scramble(state.selectedScenario.panels[0].s); state.isListening = true; if (state.recognition && !state.isRecognitionActive) { try { state.recognition.start(); } catch(e) {} } render(); }
+function startGame() { 
+    state.gameState = 'playing'; 
+    state.isCorrect = false; 
+    state.transcript = ""; 
+    state.score = 0; 
+    state.shuffledWords = scramble(state.selectedScenario.panels[0].s); 
+    state.isListening = true; 
+    
+    // Start volume monitoring
+    startVolumeMonitoring();
+    
+    if (state.recognition && !state.isRecognitionActive) { 
+        try { state.recognition.start(); } catch(e) {} 
+    } 
+    render(); 
+}
 
 function handleSuccess() {
     state.isCorrect = false; state.transcript = ""; 
@@ -317,3 +392,4 @@ render();
 </script>
 </body>
 </html>
+
