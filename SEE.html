@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EIKEN Pre-1: Voice Narrator</title>
+    <title>EIKEN Pre-1: Voice Narrator (Enhanced)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono&display=swap');
         body { font-family: 'Inter', sans-serif; }
         .font-mono { font-family: 'JetBrains+Mono', monospace; }
         
-        .mic-active { animation: pulse 1.5s infinite; }
         @keyframes pulse {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
             70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
@@ -60,11 +59,10 @@
 <body class="bg-slate-50 text-slate-900 min-h-screen p-4">
 
 <div id="app" class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 mt-4">
-    <!-- UI injected by JS -->
-</div>
+    </div>
 
 <script>
-// Minimalist Fallback Icons
+// Scenarios and Icons
 const ICONS = {
     tv: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-24 h-24 text-indigo-400"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>`,
     farm: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-24 h-24 text-green-500"><path d="M3 20h18M3 20v-8l9-5 9 5v8M9 20v-5h6v5"/></svg>`,
@@ -140,17 +138,23 @@ let state = {
     audioContext: null,
     score: 0,
     isAnimatingScore: false,
+    // Monitoring state
     volume: 0,
     audioStream: null,
     analyser: null,
-    dataArray: null
+    dataArray: null,
+    // Easy Mode state
+    isEasyMode: false,
+    easyModeIndex: 0
 };
 
+// VOLUME MONITORING LOGIC
 async function startVolumeMonitoring() {
     try {
         if (!state.audioContext) {
             state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
+        if (state.audioContext.state === 'suspended') await state.audioContext.resume();
         
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         state.audioStream = stream;
@@ -163,40 +167,34 @@ async function startVolumeMonitoring() {
         state.dataArray = new Uint8Array(bufferLength);
         
         source.connect(state.analyser);
-        updateVolume();
+        updateVolumeLoop();
     } catch (err) {
-        console.error("Microphone access denied for volume meter:", err);
+        console.error("Mic access denied:", err);
     }
 }
 
-function updateVolume() {
-    if (!state.isListening) return;
+function updateVolumeLoop() {
+    if (!state.isListening || state.gameState !== 'playing') return;
     
     state.analyser.getByteFrequencyData(state.dataArray);
     let values = 0;
-    for (let i = 0; i < state.dataArray.length; i++) {
-        values += state.dataArray[i];
-    }
+    for (let i = 0; i < state.dataArray.length; i++) { values += state.dataArray[i]; }
     state.volume = values / state.dataArray.length;
 
-    // Update the visual indicator directly for performance
     const micDot = document.getElementById('mic-indicator-dot');
     const micRing = document.getElementById('mic-indicator-ring');
     if (micDot && micRing) {
-        const scale = 1 + (state.volume / 100);
+        const scale = 1 + (state.volume / 80);
         const opacity = 0.2 + (state.volume / 100);
         micDot.style.transform = `scale(${scale})`;
-        micRing.style.transform = `scale(${scale * 1.5})`;
+        micRing.style.transform = `scale(${scale * 1.8})`;
         micRing.style.opacity = opacity;
     }
-    
-    requestAnimationFrame(updateVolume);
+    requestAnimationFrame(updateVolumeLoop);
 }
 
 function playSound(type) {
-    if (!state.audioContext) {
-        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = state.audioContext;
     if (ctx.state === 'suspended') ctx.resume();
     
@@ -207,14 +205,12 @@ function playSound(type) {
     const now = ctx.currentTime;
 
     if (type === 'success') {
-        osc.type = 'sine';
         osc.frequency.setValueAtTime(523.25, now);
         osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
         gain.gain.setValueAtTime(0.1, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
         osc.start(now); osc.stop(now + 0.3);
     } else if (type === 'pop') {
-        osc.type = 'triangle';
         osc.frequency.setValueAtTime(150, now);
         osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
         gain.gain.setValueAtTime(0.05, now);
@@ -233,14 +229,12 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     state.recognition.onstart = () => { state.isRecognitionActive = true; render(); };
     state.recognition.onresult = (event) => {
         if (state.isCorrect) return;
-        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) { state.transcript = transcript; checkSpeech(); }
-            else { interimTranscript += transcript; }
+            state.transcript = event.results[i][0].transcript;
+            checkSpeech(); 
         }
         const liveEl = document.getElementById('live-transcript');
-        if (liveEl) liveEl.innerText = interimTranscript || state.transcript;
+        if (liveEl) liveEl.innerText = state.transcript || 'Speak the sentence...';
     };
     state.recognition.onend = () => {
         state.isRecognitionActive = false;
@@ -256,17 +250,42 @@ function scramble(sentence) { return (sentence || "").split(' ').sort(() => Math
 function checkSpeech() {
     const rawTarget = state.selectedScenario.panels[state.currentPanelIndex][state.currentType];
     if (!rawTarget) return;
-    const target = rawTarget.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
-    const input = state.transcript.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
-    const targetWords = target.split(/\s+/).filter(w => w.length > 2);
-    const matchedWords = targetWords.filter(word => input.includes(word));
-    const accuracy = targetWords.length > 0 ? (matchedWords.length / targetWords.length) : 1;
 
-    if (accuracy > 0.60 || input.includes(target)) {
-        state.isCorrect = true; state.score += 100; state.isAnimatingScore = true;
-        playSound('success'); render();
-        setTimeout(() => { state.isAnimatingScore = false; handleSuccess(); }, 1000);
+    const targetWordsFull = rawTarget.split(/\s+/);
+    const normalizedTarget = targetWordsFull.map(w => w.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,""));
+    const input = state.transcript.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+
+    if (state.isEasyMode) {
+        let currentTargetWord = normalizedTarget[state.easyModeIndex];
+        if (input.includes(currentTargetWord)) {
+            state.easyModeIndex++;
+            state.transcript = ""; // Clear buffer
+            playSound('pop');
+            render();
+
+            if (state.easyModeIndex >= targetWordsFull.length) {
+                triggerSuccess();
+            }
+        }
+    } else {
+        const targetWordsShort = normalizedTarget.filter(w => w.length > 2);
+        const matchedWords = targetWordsShort.filter(word => input.includes(word));
+        const accuracy = targetWordsShort.length > 0 ? (matchedWords.length / targetWordsShort.length) : 1;
+
+        if (accuracy > 0.40 || input.includes(rawTarget.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,""))) {
+            triggerSuccess();
+        }
     }
+}
+
+function triggerSuccess() {
+    state.isCorrect = true; state.score += 100; state.isAnimatingScore = true;
+    playSound('success'); render();
+    setTimeout(() => { 
+        state.isAnimatingScore = false; 
+        state.easyModeIndex = 0;
+        handleSuccess(); 
+    }, 1000);
 }
 
 function render() {
@@ -288,6 +307,15 @@ function render() {
                             </button>`).join('')}
                     </div>
                 </section>
+                <section>
+                    <h3 class="text-xs font-black text-slate-400 mb-4 uppercase tracking-widest">Training Mode</h3>
+                    <div class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border-2 border-slate-100">
+                        <label class="flex items-center cursor-pointer gap-3 w-full">
+                            <input type="checkbox" onchange="state.isEasyMode = this.checked" ${state.isEasyMode ? 'checked' : ''} class="w-6 h-6 accent-indigo-600 rounded-lg">
+                            <div><div class="font-bold text-slate-800 text-sm">Word-by-Word Mode</div><div class="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Lock in words sequentially (Best for soft voices)</div></div>
+                        </label>
+                    </div>
+                </section>
                 <button onclick="startGame()" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xl hover:bg-indigo-700 shadow-lg">START LESSON</button>
             </div>
         `;
@@ -296,16 +324,10 @@ function render() {
         const opening = (state.currentPanelIndex === 0 && state.selectedScenario.openingSentence) ? 
             `<div class="mb-6 p-4 bg-indigo-50 border-l-4 border-indigo-500 text-indigo-900 font-bold italic rounded-r-lg text-sm animate-opening">"${state.selectedScenario.openingSentence}"</div>` : '';
 
+        const rawTarget = panel[state.currentType];
+        const targetWordsFull = rawTarget.split(/\s+/);
+
         app.innerHTML = `
-            <div class="flex items-center gap-3 bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700">
-			    <div class="relative flex items-center justify-center w-4 h-4">
-			        <div id="mic-indicator-ring" class="absolute inset-0 rounded-full bg-red-500/20 transition-transform duration-75"></div>
-			        <div id="mic-indicator-dot" class="relative w-2 h-2 rounded-full ${state.isRecognitionActive ? 'bg-red-500' : 'bg-slate-500'} transition-transform duration-75"></div>
-			    </div>
-			    <span class="text-[10px] font-black uppercase text-slate-400 tracking-tighter">
-			        ${state.isRecognitionActive ? 'Live Audio' : 'Mic Off'}
-			    </span>
-			</div>
             <div class="bg-slate-900 p-6 text-white flex justify-between items-center transition-all ${state.isCorrect ? 'correct-flash' : ''}">
                 <div><h1 class="text-lg font-bold truncate max-w-[200px]">${state.selectedScenario.title}</h1><p class="text-slate-400 text-xs font-medium">${panel.title}</p></div>
                 <div class="flex flex-col items-end"><div class="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">Score</div><div class="text-2xl font-mono font-bold text-yellow-400 ${state.isAnimatingScore ? 'score-pop' : ''}">${state.score}</div></div>
@@ -323,11 +345,34 @@ function render() {
                     <div class="w-full md:w-2/3">
                         <div class="flex justify-between items-center mb-4">
                             <div class="flex gap-1.5">${['s', 'e', 'ex'].map(t => `<div class="h-1.5 w-10 rounded-full ${state.currentType === t ? 'bg-indigo-500' : 'bg-slate-200'} transition-all"></div>`).join('')}</div>
-                            <div class="flex items-center gap-2"><div class="w-2.5 h-2.5 rounded-full ${state.isRecognitionActive ? 'bg-red-500 mic-active' : 'bg-slate-300'}"></div><span class="text-[10px] font-black uppercase text-slate-400">${state.isRecognitionActive ? 'Listening' : 'Ready'}</span></div>
+                            <div class="flex items-center gap-3 bg-slate-800/10 px-3 py-1 rounded-full border border-slate-200">
+                                <div class="relative flex items-center justify-center w-4 h-4">
+                                    <div id="mic-indicator-ring" class="absolute inset-0 rounded-full bg-red-500/20 transition-transform duration-75"></div>
+                                    <div id="mic-indicator-dot" class="relative w-2 h-2 rounded-full ${state.isRecognitionActive ? 'bg-red-500' : 'bg-slate-300'} transition-transform duration-75"></div>
+                                </div>
+                                <span class="text-[10px] font-black uppercase text-slate-400 tracking-tighter">${state.isRecognitionActive ? 'Live' : 'Ready'}</span>
+                            </div>
                         </div>
-                        <div class="flex flex-wrap gap-2.5 justify-start min-h-[120px]">
-                            ${state.shuffledWords.map((word, i) => `<span class="px-4 py-2 bg-white text-slate-800 rounded-xl font-bold border-2 border-slate-100 shadow-sm text-md select-none word-entrance" style="animation-delay: ${i * 0.05}s">${word}</span>`).join('')}
-                        </div>
+
+                        ${state.isEasyMode ? `
+                            <div class="space-y-6">
+                                <div class="flex flex-wrap gap-x-2 gap-y-3 p-4 bg-indigo-50 rounded-2xl border-2 border-indigo-100 min-h-[90px] items-center">
+                                    ${targetWordsFull.slice(0, state.easyModeIndex).map(word => `<span class="text-indigo-700 font-extrabold text-lg animate-in fade-in slide-in-from-bottom-2">${word}</span>`).join('')}
+                                    ${state.easyModeIndex < targetWordsFull.length ? '<span class="w-8 h-1 bg-indigo-200 animate-pulse rounded-full"></span>' : ''}
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    ${state.shuffledWords.map(word => {
+                                        const clean = (w) => w.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+                                        const isLocked = targetWordsFull.slice(0, state.easyModeIndex).some(w => clean(w) === clean(word));
+                                        return `<span class="px-3 py-1.5 rounded-xl font-bold text-xs ${isLocked ? 'opacity-20 bg-slate-100 grayscale' : 'bg-white border-2 border-slate-100 text-slate-500 shadow-sm'}">${word}</span>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="flex flex-wrap gap-2.5 justify-start min-h-[120px]">
+                                ${state.shuffledWords.map((word, i) => `<span class="px-4 py-2 bg-white text-slate-800 rounded-xl font-bold border-2 border-slate-100 shadow-sm text-md word-entrance" style="animation-delay: ${i * 0.05}s">${word}</span>`).join('')}
+                            </div>
+                        `}
                     </div>
                 </div>
 
@@ -350,15 +395,16 @@ function render() {
 }
 
 function selectScenario(id) { state.selectedScenario = SCENARIOS.find(s => s.id === id); state.currentPanelIndex = 0; state.currentType = 's'; render(); }
+
 function startGame() { 
     state.gameState = 'playing'; 
     state.isCorrect = false; 
     state.transcript = ""; 
     state.score = 0; 
+    state.easyModeIndex = 0;
     state.shuffledWords = scramble(state.selectedScenario.panels[0].s); 
     state.isListening = true; 
     
-    // Start volume monitoring
     startVolumeMonitoring();
     
     if (state.recognition && !state.isRecognitionActive) { 
@@ -368,7 +414,7 @@ function startGame() {
 }
 
 function handleSuccess() {
-    state.isCorrect = false; state.transcript = ""; 
+    state.isCorrect = false; state.transcript = ""; state.easyModeIndex = 0;
     const panel = state.selectedScenario.panels[state.currentPanelIndex];
     if (state.currentType === 's') { state.currentType = panel.e ? 'e' : 'ex'; } 
     else if (state.currentType === 'e') { state.currentType = panel.ex ? 'ex' : 's'; if (state.currentType === 's') state.currentPanelIndex++; } 
@@ -387,9 +433,8 @@ function handleSuccess() {
     render();
 }
 
-function resetGame() { state.gameState = 'setup'; state.currentPanelIndex = 0; state.currentType = 's'; state.isListening = false; if (state.recognition) state.recognition.stop(); render(); }
+function resetGame() { state.gameState = 'setup'; state.currentPanelIndex = 0; state.currentType = 's'; state.easyModeIndex = 0; state.isListening = false; if (state.recognition) state.recognition.stop(); render(); }
 render();
 </script>
 </body>
 </html>
-
