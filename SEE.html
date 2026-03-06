@@ -150,12 +150,13 @@ let state = {
     dataArray: null,
     isEasyMode: false,
     easyModeIndex: 0,
+    silenceTimer: null,
     timeLeft: 120,
     timerInterval: null
 };
 
 // AUDIO MONITORING
-async function startVolumeMonitoring() {
+async function startVolumeMoniotring() {
     try {
         if (!state.audioContext) { state.audioContext = new (window.AudioContext || window.webkitAudioContext)(); }
         if (state.audioContext.state === 'suspended') await state.audioContext.resume();
@@ -252,13 +253,32 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         state.transcript = cumulativeTranscript;
         checkSpeech(); 
         
+        // Update the UI immediately
         const liveEl = document.getElementById('live-transcript');
         if (liveEl) {
             liveEl.innerText = state.transcript || 'Speak the sentence...';
         }
+
+        // 2. Clear existing silence timer and start a new one
+        if (state.silenceTimer) clearTimeout(state.silenceTimer);
+
+        // If no new results are received for 3 seconds, clear the transcript
+        state.silenceTimer = setTimeout(() => {
+            if (state.isListening && !state.isCorrect && state.transcript !== "") {
+                state.transcript = ""; // Clear for the UI
+                // Stopping the recognition clears the internal result buffer
+                if (state.recognition) state.recognition.stop(); 
+            }
+        }, 3000);
     };
     state.recognition.onend = () => {
-        state.isRecognitionActive = false;
+        // Ensure the display is cleared if not currently in a success state
+        if (!state.isCorrect) {
+            state.transcript = "";
+            const liveEl = document.getElementById('live-transcript');
+            if (liveEl) liveEl.innerText = 'Speak the sentence...';
+        }
+
         if (state.isListening && state.gameState === 'playing' && !state.isCorrect) {
             try { state.recognition.start(); } catch(e) {}
         }
