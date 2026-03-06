@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EIKEN Pre-1: Voice Narrator (Exam Mode)</title>
+    <title>EIKEN Pre-1: Voice Narrator (v0.16)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono&display=swap');
@@ -331,6 +331,10 @@ function checkSpeech() {
 
 function triggerSuccess() {
     if (state.silenceTimer) clearTimeout(state.silenceTimer);
+    
+    // Stop recognition here to clear the buffer for the next sentence
+    if (state.recognition) state.recognition.stop(); 
+    
     state.isCorrect = true; state.score += 100; state.isAnimatingScore = true;
     playSound('success'); render();
     setTimeout(() => { 
@@ -423,7 +427,7 @@ function render() {
                             </div>
                         ` : `
                             <div class="flex flex-wrap gap-2.5 justify-start min-h-[120px]">
-                                ${state.shuffledWords.map((word, i) => `<span class="px-4 py-2 bg-white text-slate-800 rounded-xl font-bold border-2 border-slate-100 shadow-sm text-md word-entrance" style="animation-delay: ${i * 0.05}s">${word}</span>`).join('')}
+                                ${state.shuffledWords.map((word, i) => `<span class="px-4 py-2 bg-white text-slate-800 rounded-xl font-bold border-2 border-slate-100 shadow-sm text-md">${word}</span>`).join('')}
                             </div>
                         `}
                     </div>
@@ -474,6 +478,7 @@ function handleSuccess() {
     if (state.currentType === 's') { state.currentType = panel.e ? 'e' : 'ex'; } 
     else if (state.currentType === 'e') { state.currentType = panel.ex ? 'ex' : 's'; if (state.currentType === 's') state.currentPanelIndex++; } 
     else { state.currentPanelIndex++; state.currentType = 's'; }
+    
     if (state.currentPanelIndex >= state.selectedScenario.panels.length) {
         state.gameState = 'result'; state.isListening = false;
         if (state.recognition) state.recognition.stop();
@@ -484,6 +489,11 @@ function handleSuccess() {
         const nextPanel = state.selectedScenario.panels[state.currentPanelIndex];
         state.shuffledWords = scramble(nextPanel[state.currentType]);
         playSound('pop');
+        
+        // Restart recognition now that the state is clean for the new sentence
+        if (state.recognition && state.isListening) {
+            try { state.recognition.start(); } catch(e) {}
+        }
     }
     render();
 }
