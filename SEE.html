@@ -242,12 +242,20 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     state.recognition.onstart = () => { state.isRecognitionActive = true; render(); };
     state.recognition.onresult = (event) => {
         if (state.isCorrect) return;
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            state.transcript = event.results[i][0].transcript;
-            checkSpeech(); 
+        
+        // Build the sentence by combining all current results in the buffer
+        let cumulativeTranscript = "";
+        for (let i = 0; i < event.results.length; ++i) {
+            cumulativeTranscript += event.results[i][0].transcript;
         }
+        
+        state.transcript = cumulativeTranscript;
+        checkSpeech(); 
+        
         const liveEl = document.getElementById('live-transcript');
-        if (liveEl) liveEl.innerText = state.transcript || 'Speak the sentence...';
+        if (liveEl) {
+            liveEl.innerText = state.transcript || 'Speak the sentence...';
+        }
     };
     state.recognition.onend = () => {
         state.isRecognitionActive = false;
@@ -389,7 +397,7 @@ function render() {
                         `}
                     </div>
                 </div>
-                <div id="live-transcript" class="text-center text-indigo-500 italic text-xl h-10 px-4 font-bold mb-6">${state.transcript || 'Speak the sentence...'}</div>
+                <div id="live-transcript" class="text-center text-indigo-500 italic text-xl min-h-[60px] h-auto px-4 font-bold mb-6">${state.transcript || 'Speak the sentence...'}</div>
                 ${state.isCorrect ? `<div class="text-center text-green-600 font-black text-3xl animate-bounce tracking-widest">EXCELLENT!</div>` : ''}
                 <div class="mt-8 flex justify-between items-center border-t border-slate-100 pt-6">
                     <div class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Panel ${state.currentPanelIndex + 1} of ${state.selectedScenario.panels.length}</div>
@@ -437,6 +445,13 @@ function handleSuccess() {
         state.shuffledWords = scramble(nextPanel[state.currentType]);
         playSound('pop');
     }
+
+    // In handleSuccess(), ensure recognition is stopped to clear the buffer
+    if (state.recognition) {
+        state.recognition.stop(); 
+        // The existing onend handler will automatically restart it for the next panel
+    }
+
     render();
 }
 
