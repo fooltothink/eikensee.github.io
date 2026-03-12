@@ -157,7 +157,7 @@ let state = {
     dataArray: null,
     isEasyMode: false,
     easyModeIndex: 0,
-    easyModeSearchCursor: 0,
+    easyModeBufferStart: 0,
     isFrogJumping: false,
     lastMatchedCount: 0,
     silenceTimer: null,
@@ -269,6 +269,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         state.silenceTimer = setTimeout(() => {
             if (state.isListening && !state.isCorrect && state.transcript !== "") {
                 state.transcript = ""; 
+                state.easyModeBufferStart = state.easyModeIndex; // <-- ADD THIS
                 if (state.recognition) state.recognition.stop(); 
             }
         }, 3000);
@@ -278,6 +279,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         state.isRecognitionActive = false;
         if (!state.isCorrect) {
             state.transcript = "";
+            state.easyModeBufferStart = state.easyModeIndex; // <-- ADD THIS
             const liveEl = document.getElementById('live-transcript');
             if (liveEl) liveEl.innerText = 'Speak the sentence...';
         }
@@ -303,41 +305,38 @@ function checkSpeech() {
     const rawTarget = state.selectedScenario.panels[state.currentPanelIndex][state.currentType];
     if (!rawTarget) return;
     const targetWordsFull = rawTarget.split(/\s+/);
-    // Sanitize input but keep spaces for word boundary detection
-    const rawInput = state.transcript.toLowerCase(); 
+    const normalizedTarget = targetWordsFull.map(w => w.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,""));
     
+    const rawInput = state.transcript.toLowerCase();
+    const cleanInput = rawInput.replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+
     if (state.isEasyMode) {
-        // 1. Get the current target word and normalize it
-        let targetWord = targetWordsFull[state.easyModeIndex];
-        if (!targetWord) return;
-        const cleanTarget = targetWord.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
+        let matchedSomething = false;
         
-        // 2. Look ONLY at the "Fresh" part of the transcript (after the cursor)
-        const freshInput = rawInput.substring(state.easyModeSearchCursor);
-        
-        // 3. Create a strict pattern: Checks for the word surrounded by boundaries (space, start, end, punctuation)
-        // This prevents "a" matching inside "apple"
-        const escapedTarget = cleanTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(^|\\s|\\p{P})${escapedTarget}($|\\s|\\p{P})`, 'u');
-        
-        const match = freshInput.match(regex);
-        
-        if (match) {
-            // 4. Update the cursor to skip past this matched word so we don't match it again
-            // match.index is relative to freshInput, so we add it to the global cursor
-            state.easyModeSearchCursor += (match.index + match[0].length);
+        // Loop catches multiple words spoken quickly in one transcript update
+        while (state.easyModeIndex < targetWordsFull.length) {
+            // Only look for the sequence of words within the current active buffer
+            const wordsToMatch = normalizedTarget.slice(state.easyModeBufferStart, state.easyModeIndex + 1);
             
-            state.easyModeIndex++;
+            // Creates a pattern like: \bthe\b.*\bcat\b
+            const pattern = wordsToMatch.map(w => '\\b' + w + '\\b').join('.*');
+            const regex = new RegExp(pattern, 'i');
+            
+            if (regex.test(cleanInput)) {
+                state.easyModeIndex++;
+                matchedSomething = true;
+            } else {
+                break; // Stop checking if the next word isn't in the transcript yet
+            }
+        }
+
+        if (matchedSomething) {
             triggerFrogJump();
             playSound('pop');
             render();
-            
             if (state.easyModeIndex >= targetWordsFull.length) triggerSuccess();
         }
     } else {
-        // Standard mode logic (unchanged)
-        const normalizedTarget = targetWordsFull.map(w => w.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,""));
-        const cleanInput = rawInput.replace(/[.,\/#!$%\^&\*;:{}=\-_~()]/g,"");
         const targetWordsShort = normalizedTarget.filter(w => w.length > 2);
         const matchedWords = targetWordsShort.filter(word => cleanInput.includes(word));
         
@@ -490,7 +489,7 @@ function startGame() {
     state.shuffledWords = scramble(state.selectedScenario.panels[0].s); 
     state.isListening = true; 
     state.easyModeIndex = 0; 
-    state.easyModeSearchCursor = 0;
+    state.easyModeBufferStart = 0;
     startVolumeMonitoring();
     startExamTimer();
     if (state.recognition && !state.isRecognitionActive) { try { state.recognition.start(); } catch(e) {} } 
@@ -500,7 +499,7 @@ function startGame() {
 function handleSuccess() {
     state.isCorrect = false; state.transcript = ""; state.easyModeIndex = 0; state.lastMatchedCount = 0;
     state.easyModeIndex = 0; 
-    state.easyModeSearchCursor = 0;
+    state.easyModeBufferStart = 0;
     const panel = state.selectedScenario.panels[state.currentPanelIndex];
     if (state.currentType === 's') { state.currentType = panel.e ? 'e' : 'ex'; } 
     else if (state.currentType === 'e') { state.currentType = panel.ex ? 'ex' : 's'; if (state.currentType === 's') state.currentPanelIndex++; } 
@@ -529,7 +528,7 @@ function resetGame() {
     if (state.silenceTimer) clearTimeout(state.silenceTimer);
     state.gameState = 'setup'; state.currentPanelIndex = 0; state.currentType = 's'; state.easyModeIndex = 0; state.isListening = false; 
     state.easyModeIndex = 0; 
-    state.easyModeSearchCursor = 0;
+    state.easyModeBufferStart = 0;
     if (state.recognition) state.recognition.stop(); 
     if (state.timerInterval) clearInterval(state.timerInterval); 
     render(); 
